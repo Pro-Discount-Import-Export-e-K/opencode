@@ -1377,11 +1377,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             }
 
             if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
-            if (
-              lastAssistant?.finish &&
-              !["tool-calls"].includes(lastAssistant.finish) &&
-              lastUser.id < lastAssistant.id
-            ) {
+            if (shouldExitLoop(lastUser, lastAssistant)) {
               log.info("exiting loop", { sessionID })
               break
             }
@@ -1485,8 +1481,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 if (step === 1) SessionSummary.summarize({ sessionID, messageID: lastUser.id })
 
                 if (step > 1 && lastFinished) {
+                  let seen = false
                   for (const m of msgs) {
-                    if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
+                    if (!seen) {
+                      seen = m.info.id === lastFinished.id
+                      continue
+                    }
+                    if (m.info.role !== "user") continue
                     for (const p of m.parts) {
                       if (p.type !== "text" || p.ignored || p.synthetic) continue
                       if (!p.text.trim()) continue
@@ -1873,6 +1874,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
   export async function command(input: CommandInput) {
     return runPromise((svc) => svc.command(CommandInput.parse(input)))
+  }
+
+  /** @internal Exported for testing — determines whether the prompt loop should exit */
+  export function shouldExitLoop(
+    lastUser: MessageV2.User | undefined,
+    lastAssistant: MessageV2.Assistant | undefined,
+  ): boolean {
+    if (!lastUser) return false
+    if (!lastAssistant?.finish) return false
+    if (["tool-calls", "unknown"].includes(lastAssistant.finish)) return false
+    return lastAssistant.parentID === lastUser.id
   }
 
   /** @internal Exported for testing */
